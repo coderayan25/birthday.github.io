@@ -199,51 +199,87 @@ function resetTimer() {
 buildSlides(images);
 buildDots();
 
-document
-    .getElementById("prev")
-    .addEventListener("click", () => goTo(current - 1));
-document
-    .getElementById("next")
-    .addEventListener("click", () => goTo(current + 1));
+// Arrow buttons — only wire up if they actually exist in the HTML
+const prevBtn = document.getElementById("prev");
+const nextBtn = document.getElementById("next");
+if (prevBtn) prevBtn.addEventListener("click", () => goTo(current - 1));
+if (nextBtn) nextBtn.addEventListener("click", () => goTo(current + 1));
 
 document.addEventListener("keydown", (e) => {
     if (e.key === "ArrowLeft") goTo(current - 1);
     if (e.key === "ArrowRight") goTo(current + 1);
 });
 
-let sx = 0,
-    dragging = false;
+/* ── Swipe / tap ──────────────────────────────────────────────────
+   Swipe LEFT  (right→left, dx < 0) → previous photo (left side)
+   Swipe RIGHT (left→right, dx > 0) → next photo (right side)
+   Tap left  half of slider         → previous photo
+   Tap right half of slider         → next photo
+   ──────────────────────────────────────────────────────────────── */
 const sw = document.getElementById("sliderWrapper");
+let swipeStartX = 0;
+let swipeStartY = 0;
+let swipeMoved = false;
+let swipeLocked = null;
 
+// Touch start — record finger position
 sw.addEventListener(
     "touchstart",
     (e) => {
-        sx = e.touches[0].clientX;
-        dragging = true;
-    },
-    { passive: true },
-);
-sw.addEventListener(
-    "touchend",
-    (e) => {
-        if (!dragging) return;
-        dragging = false;
-        const dx = e.changedTouches[0].clientX - sx;
-        if (Math.abs(dx) > 35) goTo(dx < 0 ? current + 1 : current - 1);
+        swipeStartX = e.touches[0].clientX;
+        swipeStartY = e.touches[0].clientY;
+        swipeMoved = false;
+        swipeLocked = null; // not yet decided horizontal or vertical
     },
     { passive: true },
 );
 
-sw.addEventListener("pointerdown", (e) => {
-    sw.setPointerCapture(e.pointerId);
-    sx = e.clientX;
-    dragging = true;
-});
-sw.addEventListener("pointerup", (e) => {
-    if (!dragging) return;
-    dragging = false;
-    const dx = e.clientX - sx;
-    if (Math.abs(dx) > 35) goTo(dx < 0 ? current + 1 : current - 1);
+// Touch move — decide direction once, then lock
+sw.addEventListener(
+    "touchmove",
+    (e) => {
+        const dx = e.touches[0].clientX - swipeStartX;
+        const dy = e.touches[0].clientY - swipeStartY;
+
+        if (swipeLocked === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+            swipeLocked =
+                Math.abs(dx) > Math.abs(dy) ? "horizontal" : "vertical";
+        }
+
+        if (swipeLocked === "horizontal") {
+            e.preventDefault(); // block page scroll only during horizontal swipe
+            if (Math.abs(dx) > 10) swipeMoved = true;
+        }
+    },
+    { passive: false },
+); // must be non-passive to call preventDefault
+
+// Touch end — navigate based on swipe direction
+sw.addEventListener(
+    "touchend",
+    (e) => {
+        const dx = e.changedTouches[0].clientX - swipeStartX;
+        if (swipeLocked === "horizontal" && Math.abs(dx) > 35) {
+            swipeMoved = true;
+            goTo(dx < 0 ? current + 1 : current - 1);
+        }
+    },
+    { passive: true },
+);
+
+// Click — only fires if not a swipe; left half = prev, right half = next
+sw.addEventListener("click", (e) => {
+    if (swipeMoved) {
+        swipeMoved = false;
+        return;
+    }
+    const rect = sw.getBoundingClientRect();
+    const center = rect.left + rect.width / 2;
+    if (e.clientX > center) {
+        goTo(current + 1);
+    } else {
+        goTo(current - 1);
+    }
 });
 
 document.addEventListener("visibilitychange", () =>
